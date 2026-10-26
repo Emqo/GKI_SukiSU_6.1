@@ -285,6 +285,8 @@ jobs:
           echo "克隆 AnyKernel3..."
           clone_with_retry https://github.com/WildKernels/AnyKernel3.git AnyKernel3 -b gki-2.0
           rm -rf AnyKernel3/.git
+          # 用本仓库自己的刷入脚本和横幅覆盖上游的（保留上游的 tools/）
+          cp "$GITHUB_WORKSPACE/anykernel/anykernel.sh" "$GITHUB_WORKSPACE/anykernel/banner" AnyKernel3/
 
           echo "准备补丁资源..."
           clone_with_retry https://github.com/ShirkNeko/SukiSU_patch.git SukiSU_patch
