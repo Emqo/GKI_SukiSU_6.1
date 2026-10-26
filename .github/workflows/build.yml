@@ -1141,10 +1141,16 @@ jobs:
 
       - name: 创建 GitHub Release
         run: |
-          # 内核产物 + 管理器 + SUSFS 模块；跳过冲突文件和日志产物
+          # 内核产物 + 管理器 + SUSFS 模块；跳过冲突文件、日志产物和 -gradle 目录里的重复 APK
           mapfile -d '' FILES < <(find ./downloaded-artifacts -type f \
             \( -name '*AnyKernel3.zip' -o -name '*.img' -o -name '*.apk' -o -path './downloaded-artifacts/susfs-*/*' \) \
-            ! -path '*-Rejects/*' ! -path '*-Build-Logs/*' -print0)
+            ! -path '*-Rejects/*' ! -path '*-Build-Logs/*' ! -path '*-gradle/*' -print0)
+          # GitHub 不允许同名附件，提前检查
+          DUP=$(printf '%s\n' "${FILES[@]}" | xargs -n1 basename | sort | uniq -d)
+          if [ -n "$DUP" ]; then
+            echo "::error::附件文件名重复: $DUP"
+            exit 1
+          fi
           if [ "${#FILES[@]}" -eq 0 ]; then
             echo "::error::没有找到可上传的产物"
             exit 1
