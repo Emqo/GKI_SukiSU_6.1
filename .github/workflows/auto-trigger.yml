@@ -1,0 +1,122 @@
+name: 上游更新自动构建
+
+# 每天检查一次 SukiSU Ultra (builtin) 和 susfs4ksu (gki-android14-6.1) 有没有新提交，
+# 有就用默认参数触发 build.yml（构建并发布 Release）。
+# 上次看到的提交记录在 sha 分支的 latest_sha.txt 里。
+#
+# 注意：触发的构建如果失败，不会自动重试，要等上游下一次更新，或者手动运行 build.yml。
+
+permissions:
+  contents: write
+  actions: write
+
+on:
+  schedule:
+    - cron: '17 3 * * *'  # 每天 UTC 03:17
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "忽略记录，强制触发一次构建"
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: auto-trigger
+  cancel-in-progress: false
+
+jobs:
+  check-and-trigger:
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SUKISU_REPO: https://github.com/SukiSU-Ultra/SukiSU-Ultra.git
+      SUKISU_BRANCH: builtin
+      SUSFS_REPO: https://github.com/ShirkNeko/susfs4ksu.git
+      SUSFS_BRANCH: gki-android14-6.1
+      STATE_BRANCH: sha
+      STATE_FILE: latest_sha.txt
+    steps:
+      - name: 检出代码仓库
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: 获取上游最新提交
+        id: upstream
+        run: |
+          SUKISU_SHA=$(git ls-remote "$SUKISU_REPO" "refs/heads/$SUKISU_BRANCH" | cut -f1)
+          SUSFS_SHA=$(git ls-remote "$SUSFS_REPO" "refs/heads/$SUSFS_BRANCH" | cut -f1)
+          if [ -z "$SUKISU_SHA" ] || [ -z "$SUSFS_SHA" ]; then
+            echo "::error::获取上游提交失败 (sukisu=$SUKISU_SHA susfs=$SUSFS_SHA)"
+            exit 1
+          fi
+          echo "sukisu=$SUKISU_SHA" >> "$GITHUB_OUTPUT"
+          echo "susfs=$SUSFS_SHA" >> "$GITHUB_OUTPUT"
+          echo "SukiSU ($SUKISU_BRANCH): $SUKISU_SHA"
+          echo "susfs4ksu ($SUSFS_BRANCH): $SUSFS_SHA"
+
+      - name: 读取上次记录
+        id: previous
+        run: |
+          PREV_SUKISU=""
+          PREV_SUSFS=""
+          if git ls-remote --exit-code --heads origin "$STATE_BRANCH" >/dev/null 2>&1; then
+            git fetch --depth=1 origin "$STATE_BRANCH:refs/remotes/origin/$STATE_BRANCH"
+            if STATE=$(git show "origin/$STATE_BRANCH:$STATE_FILE" 2>/dev/null); then
+              PREV_SUKISU=$(printf '%s\n' "$STATE" | sed -n 's/^sukisu=//p' | head -n 1)
+              PREV_SUSFS=$(printf '%s\n' "$STATE" | sed -n 's/^susfs=//p' | head -n 1)
+            fi
+          fi
+          echo "sukisu=$PREV_SUKISU" >> "$GITHUB_OUTPUT"
+          echo "susfs=$PREV_SUSFS" >> "$GITHUB_OUTPUT"
+          echo "上次 SukiSU: ${PREV_SUKISU:-无记录}"
+          echo "上次 susfs4ksu: ${PREV_SUSFS:-无记录}"
+
+      - name: 比较
+        id: compare
+        env:
+          FORCE: ${{ inputs.force }}
+          CURR_SUKISU: ${{ steps.upstream.outputs.sukisu }}
+          CURR_SUSFS: ${{ steps.upstream.outputs.susfs }}
+          PREV_SUKISU: ${{ steps.previous.outputs.sukisu }}
+          PREV_SUSFS: ${{ steps.previous.outputs.susfs }}
+        run: |
+          if [ "$FORCE" = "true" ]; then
+            echo "手动强制触发"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          elif [ "$CURR_SUKISU" != "$PREV_SUKISU" ] || [ "$CURR_SUSFS" != "$PREV_SUSFS" ]; then
+            echo "检测到上游更新"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "上游没有更新，不构建"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # 先触发构建，再写记录：触发失败时记录不变，下次检查会重试
+      - name: 触发内核构建
+        if: steps.compare.outputs.changed == 'true'
+        run: |
+          gh workflow run build.yml --ref "$GITHUB_REF_NAME"
+          echo "已触发 build.yml (ref: $GITHUB_REF_NAME)"
+
+      - name: 更新记录分支
+        if: steps.compare.outputs.changed == 'true'
+        env:
+          CURR_SUKISU: ${{ steps.upstream.outputs.sukisu }}
+          CURR_SUSFS: ${{ steps.upstream.outputs.susfs }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git rev-parse --verify -q "refs/remotes/origin/$STATE_BRANCH" >/dev/null; then
+            git checkout -B "$STATE_BRANCH" "origin/$STATE_BRANCH"
+          else
+            git checkout --orphan "$STATE_BRANCH"
+            git rm -rf . >/dev/null 2>&1 || true
+          fi
+
+          printf 'sukisu=%s\nsusfs=%s\n' "$CURR_SUKISU" "$CURR_SUSFS" > "$STATE_FILE"
+          git add "$STATE_FILE"
+          git commit -m "Update upstream SHAs: sukisu=${CURR_SUKISU:0:7} susfs=${CURR_SUSFS:0:7}" || exit 0
+          git push origin "$STATE_BRANCH"

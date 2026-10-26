@@ -261,136 +261,28 @@ ensure_scoped_guard_support() {
   install_scoped_guard_support
 }
 
-ensure_rtmutex_c99() {
-  case "$kernel_version" in
-    5.10|5.15)
-      ;;
-    *)
-      return 0
-      ;;
-  esac
 
-  local makefile="kernel/locking/Makefile"
-  if [ ! -f "$makefile" ]; then
-    echo "ERROR: $makefile not found." >&2
-    return 1
-  fi
-
-  local objects=(
-    rtmutex.o
-    rtmutex_api.o
-    rwsem.o
-    ww_rt_mutex.o
-    spinlock_rt.o
-  )
-  local additions_file
-  local object
-  local escaped_object
-  additions_file="$(mktemp)"
-
-  for object in "${objects[@]}"; do
-    escaped_object="${object//./\\.}"
-    if ! grep -q "^CFLAGS_REMOVE_${escaped_object} .*std=gnu89" "$makefile"; then
-      echo "CFLAGS_REMOVE_${object} += -std=gnu89" >> "$additions_file"
-    fi
-    if ! grep -q "^CFLAGS_${escaped_object} .*std=gnu99" "$makefile"; then
-      echo "CFLAGS_${object} += -std=gnu99" >> "$additions_file"
-    fi
-  done
-
-  if [ ! -s "$additions_file" ]; then
-    rm -f "$additions_file"
-    return 0
-  fi
-
-  echo "Forcing rtmutex include units to gnu99 for scoped_guard on 5.x..."
-  local tmp_makefile
-  tmp_makefile="$(mktemp)"
-  awk -v insert_file="$additions_file" '
-    function emit() {
-      while ((getline line < insert_file) > 0)
-        print line
-      close(insert_file)
-    }
-    !done && /^obj-\$\(CONFIG_RT_MUTEXES\).*rtmutex/ {
-      emit()
-      done = 1
-    }
-    { print }
-    END {
-      if (!done)
-        emit()
-    }
-  ' "$makefile" > "$tmp_makefile"
-  mv "$tmp_makefile" "$makefile"
-  rm -f "$additions_file"
-}
-
+# 6.1.177 起上游已包含完整修复链（含 CVE-2026-53163 对原 backport 回归的修复）
 patch_chain_is_required() {
-  # The second threshold includes CVE-2026-53163, which fixes the regression
-  # introduced by the original CVE-2026-43499 backport.
-  case "$kernel_version" in
-    5.10|5.15)
-      # Neither maintained Android 5.x line received the upstream backport.
-      return 0
-      ;;
-    6.1)
-      (( kernel_sublevel < 177 ))
-      ;;
-    6.6)
-      (( kernel_sublevel < 144 ))
-      ;;
-    6.12)
-      (( kernel_sublevel < 95 ))
-      ;;
-    *)
-      return 1
-      ;;
-  esac
+  (( kernel_sublevel < 177 ))
 }
 
-case "$kernel_version" in
-  5.10|5.15)
-    ;;
-  6.1|6.6|6.12)
-    if [[ ! "$kernel_sublevel" =~ ^[0-9]+$ ]]; then
-      echo "ERROR: non-numeric SUBLEVEL for $kernel_version: $kernel_sublevel" >&2
-      exit 2
-    fi
-    ;;
-  *)
-    echo "CVE-2026-43499: $kernel_version is outside this repository's supported GKI lines; skipping."
-    exit 0
-    ;;
-esac
+if [ "$kernel_version" != "6.1" ]; then
+  echo "CVE-2026-43499: 本仓库只支持 6.1，当前为 $kernel_version，跳过。"
+  exit 0
+fi
+
+if [[ ! "$kernel_sublevel" =~ ^[0-9]+$ ]]; then
+  echo "ERROR: non-numeric SUBLEVEL for $kernel_version: $kernel_sublevel" >&2
+  exit 2
+fi
 
 if ! patch_chain_is_required; then
   echo "CVE-2026-43499/CVE-2026-53163 fix chain is upstream in $kernel_version.$kernel_sublevel; skipping."
   exit 0
 fi
 
-case "$kernel_version" in
-  5.10)
-    primary_patch="$patch_dir/cve-2026-43499-rtmutex-5.10.patch"
-    fallback_patch="$patch_dir/cve-2026-43499-rtmutex-5.15.patch"
-    ;;
-  5.15)
-    primary_patch="$patch_dir/cve-2026-43499-rtmutex-5.15.patch"
-    fallback_patch=""
-    ;;
-  6.1|6.6)
-    primary_patch="$patch_dir/cve-2026-43499-rtmutex-6.1-6.6.patch"
-    fallback_patch=""
-    ;;
-  6.12)
-    primary_patch="$patch_dir/cve-2026-43499-rtmutex-6.12.patch"
-    fallback_patch=""
-    ;;
-  *)
-    echo "ERROR: unsupported kernel version for CVE-2026-43499 patch: $kernel_version" >&2
-    exit 1
-    ;;
-esac
+primary_patch="$patch_dir/cve-2026-43499-rtmutex-6.1-6.6.patch"
 
 if [ ! -f "$primary_patch" ]; then
   echo "ERROR: patch file not found: $primary_patch" >&2
@@ -403,7 +295,6 @@ if grep -q 'struct task_struct \*waiter_task = waiter->task;' "$rtmutex_file"; t
   echo "CVE-2026-43499 rtmutex fix already present."
   if grep -q 'scoped_guard(raw_spinlock' "$rtmutex_file"; then
     ensure_scoped_guard_support
-    ensure_rtmutex_c99
   fi
   ensure_followup_fixes
   echo "CVE-2026-43499/CVE-2026-53163 fix chain is complete."
@@ -411,23 +302,12 @@ if grep -q 'struct task_struct \*waiter_task = waiter->task;' "$rtmutex_file"; t
 fi
 
 ensure_scoped_guard_support
-ensure_rtmutex_c99
 
 if try_apply_patch "$primary_patch"; then
   echo "CVE-2026-43499 rtmutex fix applied."
   ensure_followup_fixes
   echo "CVE-2026-43499/CVE-2026-53163 fix chain is complete."
   exit 0
-fi
-
-if [ -n "${fallback_patch:-}" ] && [ -f "$fallback_patch" ]; then
-  echo "Primary patch did not match; trying fallback shape: $(basename "$fallback_patch")"
-  if try_apply_patch "$fallback_patch"; then
-    echo "CVE-2026-43499 rtmutex fix applied with fallback patch."
-    ensure_followup_fixes
-    echo "CVE-2026-43499/CVE-2026-53163 fix chain is complete."
-    exit 0
-  fi
 fi
 
 echo "ERROR: failed to apply CVE-2026-43499 rtmutex fix." >&2
