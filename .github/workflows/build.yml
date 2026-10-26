@@ -1,6 +1,6 @@
 name: 构建内核 (SukiSU Ultra / android14-6.1.138)
 
-# 个人专用构建：SukiSU Ultra + GKI android14-6.1.138（2025-06 安全补丁）。
+# 适配 Xiaomi 14（houji）的构建：SukiSU Ultra + GKI android14-6.1.138（2025-06 安全补丁）。
 # 想换内核版本，只改下面 env 里的四行。
 # 手动触发见下方 inputs；auto-trigger.yml 检测到上游更新时会用默认参数触发本工作流。
 

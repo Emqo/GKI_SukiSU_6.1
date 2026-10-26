@@ -1,6 +1,6 @@
 ### AnyKernel3 Ramdisk Mod Script
 ## osm0sis @ xda-developers
-## 个人 SukiSU Ultra + SUSFS 构建的刷入脚本（基于 WildKernels/AnyKernel3 gki-2.0 的 tools/）
+## Xiaomi 14（houji）6.1.138 内核的刷入脚本（基于 WildKernels/AnyKernel3 gki-2.0 的 tools/）
 
 ### AnyKernel setup
 # global properties

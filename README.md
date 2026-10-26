@@ -1,12 +1,19 @@
-# GKI 内核构建：SukiSU Ultra + android14-6.1.138
+# GKI 内核构建：SukiSU Ultra + android14-6.1.138（Xiaomi 14）
 
-个人专用的内核构建仓库，在 GitHub Actions 上构建一个目标：
+适配 **Xiaomi 14（houji）** 的 GKI 内核构建仓库，在 GitHub Actions 上构建 `android14-6.1` 的 6.1.138：
 
 | 项目 | 内容 |
 |:---|:---|
+| 适配机型 | Xiaomi 14（houji），国行 OS3.0.306 实机验证 |
 | 内核 | GKI `android14-6.1`，6.1.138（`2025-06` 安全补丁） |
 | Root | [SukiSU Ultra](https://github.com/SukiSU-Ultra/SukiSU-Ultra)（开 SUSFS 用 `builtin` 分支，否则用 `main`） |
 | 默认开启 | SUSFS、KPM、ZRAM 增强（lz4k / lz4kd）、BBG 防格机、CVE-2026-43499 rtmutex 修复 |
+
+## 适配说明
+
+- 版本串（`uname -r`）、构建时间和 AnyKernel3 刷入包里的机型检查（只允许 `houji`）都是按这台机型写的，其他机型不保证可用。
+- 换机型需要改三处：`build.yml` 顶部 `STOCK_LOCALVERSION`、`build_time` 默认值，以及 `anykernel/anykernel.sh` 里的 `device.name1`。
+- 内核本体是 Google 的 GKI，vendor 模块沿用手机自带的；只要 KMI（`android14-11`）一致就能加载。
 
 ## 怎么构建
 
@@ -52,6 +59,7 @@ OS_PATCH_LEVEL: "2025-06"   # 子版本号与补丁月份的对应关系见 Goog
 ```
 
 构建日志里会打印同步下来的实际子版本号，和 `SUB_LEVEL` 不一致时会给出警告。
+系统 OTA 之后如果手机 `uname -r` 变了，要同步更新 `SUB_LEVEL`、`STOCK_LOCALVERSION` 和 `build_time`（在手机上执行 `uname -r` 和 `cat /proc/version` 即可得到）。
 只改 6.1 小版本是安全的；换成别的内核大版本（5.10 / 5.15 / 6.6 / 6.12）需要补回对应的 SUSFS、ZRAM、CVE 补丁逻辑，这个仓库已经删掉了。
 
 ## 固定上游提交
