@@ -51,9 +51,23 @@ if [[ "$CURRENT_SUB" -le 141 ]] && ! grep -qF '#include <linux/dma-buf.h>' fs/pr
   echo "临时调整 Android 14 6.1 dma-buf.h 上下文"
   sed -i '/^#include <linux\/cpufreq_times.h>$/a #include <linux/dma-buf.h>' fs/proc/base.c
 fi
-if [[ "$CURRENT_SUB" -ge 157 ]]; then
-  echo "临时调整 Android 14 6.1 namespace.c 上下文"
+# namespace.c：trace/hooks/blk.h 这一行在不同月份的上游分支里有无不一致，而 SUSFS 补丁
+# 是否把它当上下文也随补丁版本变化（如 6.1.138 没有这行，v2.3.0 补丁却需要它）。
+# 按补丁内容判断，只在两边对不上时临时对齐，打完补丁后还原。
+NS_BLK_ADDED=""
+NS_BLK_REMOVED=""
+NS_PATCH_HAS_BLK=""
+if awk '/^diff --git a\/fs\/namespace.c/{f=1;next} /^diff --git/{f=0} f && index($0, " #include <trace/hooks/blk.h>")==1{found=1} END{exit !found}' "$SUSFS_PATCH"; then
+  NS_PATCH_HAS_BLK=1
+fi
+if [[ -n "$NS_PATCH_HAS_BLK" ]] && ! grep -qF '#include <trace/hooks/blk.h>' fs/namespace.c; then
+  echo "临时调整 Android 14 6.1 namespace.c 上下文（补上 trace/hooks/blk.h）"
+  sed -i '/^#include "internal.h"$/a #include <trace/hooks/blk.h>' fs/namespace.c
+  NS_BLK_ADDED=1
+elif [[ -z "$NS_PATCH_HAS_BLK" ]] && grep -qF '#include <trace/hooks/blk.h>' fs/namespace.c; then
+  echo "临时调整 Android 14 6.1 namespace.c 上下文（移除 trace/hooks/blk.h）"
   sed -i '/^#include <trace\/hooks\/blk.h>$/d' fs/namespace.c
+  NS_BLK_REMOVED=1
 fi
 
 # 新版内核在 super.c 的 internal.h 之后新增了 trace/hooks/fs.h，
@@ -121,8 +135,11 @@ if [[ "$CURRENT_SUB" -le 141 ]]; then
   echo "还原 Android 14 6.1 base.c 临时调整"
   sed -i '/^#include <linux\/dma-buf.h>$/d' fs/proc/base.c
 fi
-if [[ "$CURRENT_SUB" -ge 157 ]] && ! grep -qF '#include <trace/hooks/blk.h>' fs/namespace.c; then
-  echo "还原 Android 14 6.1 namespace.c 临时调整"
+if [[ -n "$NS_BLK_ADDED" ]]; then
+  echo "还原 Android 14 6.1 namespace.c 临时调整（移除 trace/hooks/blk.h）"
+  sed -i '/^#include <trace\/hooks\/blk.h>$/d' fs/namespace.c
+elif [[ -n "$NS_BLK_REMOVED" ]] && ! grep -qF '#include <trace/hooks/blk.h>' fs/namespace.c; then
+  echo "还原 Android 14 6.1 namespace.c 临时调整（补回 trace/hooks/blk.h）"
   sed -i '/^#include "internal.h"$/a #include <trace/hooks/blk.h>' fs/namespace.c
 fi
 
