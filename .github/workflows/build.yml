@@ -499,6 +499,15 @@ jobs:
             echo "commit=" >> $GITHUB_OUTPUT
           fi
 
+          # 上游为兼容 4.14 把 fallthrough; 改成了 /* fall through */ 注释（0b666ca），
+          # 6.1 的 clang 开着 -Werror=implicit-fallthrough 不认注释；6.1 有 fallthrough 宏，换回去
+          FT_FILES=$(grep -rlE --include='*.c' --include='*.h' '^[[:space:]]*/\*[[:space:]]*fall[- ]?through[[:space:]]*\*/[[:space:]]*$' KernelSU/kernel || true)
+          if [ -n "$FT_FILES" ]; then
+            echo "把 /* fall through */ 注释换回 fallthrough;："
+            printf '%s\n' "$FT_FILES"
+            printf '%s\n' "$FT_FILES" | xargs sed -i -E 's#^([[:space:]]*)/\*[[:space:]]*fall[- ]?through[[:space:]]*\*/[[:space:]]*$#\1fallthrough;#'
+          fi
+
       - name: 配置 SukiSU 管理器信息
         working-directory: ${{ env.KERNEL_ROOT }}/KernelSU
         env:
