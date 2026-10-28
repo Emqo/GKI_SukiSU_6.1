@@ -14,7 +14,7 @@ bad()  { printf '  [FAIL] %s\n' "$1"; FAIL=1; }
 info() { printf '  [INFO] %s\n' "$1"; }
 
 adb get-state >/dev/null 2>&1 || { echo "adb 未连接设备"; exit 2; }
-[ "$(r id -u)" = "0" ] || { echo "su 不可用，请先在 SukiSU 管理器里授权 shell"; exit 2; }
+[ "$(r 'id -u')" = "0" ] || { echo "su 不可用，请先在 SukiSU 管理器里授权 shell"; exit 2; }
 
 echo "== 内核 =="
 info "uname -r: $(r 'uname -r')"
@@ -25,7 +25,7 @@ echo "== 开机状态 =="
 
 echo "== vendor 模块 =="
 N=$(r 'lsmod | wc -l')
-if [ "${N:-0}" -ge "$EXPECT_MODULES" ]; then ok "已加载模块 $N（基线 $EXPECT_MODULES）"; else bad "已加载模块 $N，低于基线 $EXPECT_MODULES"; fi
+if [ "${N:-0}" -ge "${EXPECT_MODULES}" ]; then ok "已加载模块 ${N}（基线 ${EXPECT_MODULES}）"; else bad "已加载模块 ${N}，低于基线 ${EXPECT_MODULES}"; fi
 
 echo "== dmesg 异常 =="
 BAD=$(r 'dmesg | grep -E "disagrees about version of symbol|Unknown symbol|Kernel panic" | head -5')
