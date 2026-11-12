@@ -499,6 +499,14 @@ jobs:
             echo "commit=" >> $GITHUB_OUTPUT
           fi
 
+          # 上游 850149ef 误将 selinux_policy 指针 pol 写成了类型名 policydb。
+          # latest_granting 属于 pol；精确匹配错误赋值，上游修复后自动跳过。
+          RULES_FILE="KernelSU/kernel/selinux/rules.c"
+          if grep -qF 'policydb->latest_granting = old_pol->latest_granting + 1;' "$RULES_FILE"; then
+            echo "修正 SukiSU SELinux latest_granting 赋值中的指针名称"
+            sed -i 's/policydb->latest_granting = old_pol->latest_granting + 1;/pol->latest_granting = old_pol->latest_granting + 1;/' "$RULES_FILE"
+          fi
+
           # 上游为兼容 4.14 把 fallthrough; 改成了 /* fall through */ 注释（0b666ca），
           # 6.1 的 clang 开着 -Werror=implicit-fallthrough 不认注释；6.1 有 fallthrough 宏，换回去
           FT_FILES=$(grep -rlE --include='*.c' --include='*.h' '^[[:space:]]*/\*[[:space:]]*fall[- ]?through[[:space:]]*\*/[[:space:]]*$' KernelSU/kernel || true)
